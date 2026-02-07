@@ -13,6 +13,17 @@ import type {
 
 const NOVELAI_API_BASE = "https://image.novelai.net";
 
+/** Novel AI API のエラーを表すカスタムエラークラス */
+export class NovelAIApiError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number
+  ) {
+    super(message);
+    this.name = "NovelAIApiError";
+  }
+}
+
 /** APIリクエストボディを構築 */
 export function buildRequestBody(
   params: ImageGenerateParams
@@ -94,8 +105,9 @@ export async function generateImage(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "不明なエラー");
-    throw new Error(
-      `Novel AI API エラー (${response.status}): ${errorText}`
+    throw new NovelAIApiError(
+      `Novel AI API エラー (${response.status}): ${errorText}`,
+      response.status
     );
   }
 

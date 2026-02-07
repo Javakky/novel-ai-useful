@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildRequestBody } from "../novelai-client";
+import { buildRequestBody, NovelAIApiError } from "../novelai-client";
 import type { ImageGenerateParams } from "@/types/novelai";
 
 const baseParams: ImageGenerateParams = {
@@ -148,5 +148,28 @@ describe("buildRequestBody", () => {
 
     const result = buildRequestBody(params);
     expect(result.parameters.reference_image_multiple).toBeUndefined();
+  });
+});
+
+describe("NovelAIApiError", () => {
+  it("ステータスコードとメッセージを保持する", () => {
+    const error = new NovelAIApiError("認証エラー", 401);
+    expect(error.message).toBe("認証エラー");
+    expect(error.statusCode).toBe(401);
+    expect(error.name).toBe("NovelAIApiError");
+  });
+
+  it("Error を継承している", () => {
+    const error = new NovelAIApiError("テスト", 500);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(NovelAIApiError);
+  });
+
+  it("異なるステータスコードを正しく保持する", () => {
+    const error429 = new NovelAIApiError("レート制限", 429);
+    expect(error429.statusCode).toBe(429);
+
+    const error402 = new NovelAIApiError("ポイント不足", 402);
+    expect(error402.statusCode).toBe(402);
   });
 });

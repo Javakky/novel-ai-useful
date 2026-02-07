@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore } from "@/store/app-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,11 @@ export function TokenSetting() {
   const { apiToken, setApiToken } = useAppStore();
   const [showToken, setShowToken] = useState(false);
   const [tempToken, setTempToken] = useState(apiToken);
+
+  // Zustand persist の hydration 後にストアの値を同期する
+  useEffect(() => {
+    setTempToken(apiToken);
+  }, [apiToken]);
 
   const handleSave = () => {
     setApiToken(tempToken.trim());

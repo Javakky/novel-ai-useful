@@ -99,7 +99,7 @@ export function CharacterPrompts() {
       caption: {
         base_caption: generateParams.negativePrompt,
         char_captions: characters.map((c) => ({
-          char_caption: c.negativePrompt || "lowres",
+          char_caption: c.negativePrompt || "",
         })),
       },
     };

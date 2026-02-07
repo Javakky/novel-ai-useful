@@ -8,7 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 
 /** ユニークIDの生成 */
 export function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  return crypto.randomUUID();
 }
 
 /** 現在時刻のISO文字列 */

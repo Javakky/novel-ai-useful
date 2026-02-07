@@ -14,9 +14,20 @@ describe("generateId", () => {
     expect(id.length).toBeGreaterThan(0);
   });
 
-  it("ハイフンを含む形式", () => {
+  it("UUID形式のIDを返す", () => {
     const id = generateId();
-    expect(id).toMatch(/-/);
+    // UUID v4 形式にマッチ
+    expect(id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+  });
+
+  it("高速な連続呼び出しでも衝突しない", () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 100; i++) {
+      ids.add(generateId());
+    }
+    expect(ids.size).toBe(100);
   });
 });
 
