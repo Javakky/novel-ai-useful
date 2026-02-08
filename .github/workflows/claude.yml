@@ -42,21 +42,6 @@ jobs:
           impl_workflow_id: claude.yml # ←この workflow ファイル名に合わせる（ファイル名変えるならここも変える）
           compare_base_branch: main
 
-      - name: Debug prepare outputs (always)
-        run: |
-          echo "event_name=${{ github.event_name }}"
-          echo "actor=${{ github.actor }}"
-          echo "sender_type=${{ github.event.sender.type }}"
-          echo "comment_user_type=${{ github.event.comment.user.type }}"
-          echo "comment_body=${{ github.event.comment.body }}"
-          echo "should_run=${{ steps.prep.outputs.should_run }}"
-          echo "reason=${{ steps.prep.outputs.reason }}"
-          echo "trigger_kind=${{ steps.prep.outputs.trigger_kind }}"
-          echo "issue_number=${{ steps.prep.outputs.issue_number }}"
-          echo "pr_number=${{ steps.prep.outputs.pr_number }}"
-          echo "head_sha=${{ steps.prep.outputs.head_sha }}"
-          echo "head_ref=${{ steps.prep.outputs.head_ref }}"
-
       # PR上の@claude(implement)であれば、そのPRの review を止めたい（任意）
       - name: Cancel running reviews for this PR
         if: steps.prep.outputs.should_run == 'true' && steps.prep.outputs.pr_number != ''
@@ -77,14 +62,14 @@ jobs:
 
       # --- プロジェクトの環境設定をここに追加 ---
       # 例: Node.js
-      # - name: Set up Node.js
-      #   uses: actions/setup-node@v4
-      #   with:
-      #     node-version: '20'
-      #     cache: 'npm'
-      #
-      # - name: Install dependencies
-      #   run: npm install
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
       # ------------------------------------
 
       - name: Run Claude (implement)
@@ -97,6 +82,10 @@ jobs:
           # 必要に応じてデフォルト値をオーバーライド
           # default_model: 'opus'
           # default_max_turns: 20
-          # allowed_tools: |
-          #   Bash(npm run lint)
-          #   Bash(npm run test)
+          allowed_tools: |
+            Bash(npm run dev)
+            Bash(npm run build)
+            Bash(npm run start)
+            Bash(npm run lint)
+            Bash(npm run test)
+            Bash(npm run test:run)
