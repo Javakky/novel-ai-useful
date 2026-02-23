@@ -8,9 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Modal } from "@/components/ui/modal";
-import { Plus, Trash2, Edit, Users } from "lucide-react";
+import { Plus, Trash2, Edit, X, CheckCircle } from "lucide-react";
 import type { CharacterDefinition } from "@/types/app";
-import type { V4Prompt } from "@/types/novelai";
 
 export function CharacterPrompts() {
   const {
@@ -19,7 +18,10 @@ export function CharacterPrompts() {
     updateCharacter,
     deleteCharacter,
     generateParams,
-    setGenerateParams,
+    appliedCharacterIds,
+    applyCharacter,
+    removeAppliedCharacter,
+    clearAppliedCharacters,
   } = useAppStore();
 
   const [showModal, setShowModal] = useState(false);
@@ -68,71 +70,73 @@ export function CharacterPrompts() {
     setCharY(0.5);
   };
 
-  const handleApplyCharacters = () => {
-    if (characters.length === 0) return;
-
-    const isV4 = generateParams.model.includes("diffusion-4");
-    if (!isV4) {
-      // V3: キャラクタープロンプトを通常のプロンプトに結合
-      const charPrompts = characters.map((c) => c.prompt).join(", ");
-      const currentPrompt = generateParams.prompt;
-      setGenerateParams({
-        prompt: currentPrompt ? `${currentPrompt}, ${charPrompts}` : charPrompts,
-      });
-      return;
+  const handleToggleCharacter = (id: string) => {
+    if (appliedCharacterIds.includes(id)) {
+      removeAppliedCharacter(id);
+    } else {
+      applyCharacter(id);
     }
-
-    // V4: キャラクタープロンプト構造を構築
-    const v4Prompt: V4Prompt = {
-      caption: {
-        base_caption: generateParams.prompt,
-        char_captions: characters.map((c) => ({
-          char_caption: c.prompt,
-          centers: c.position ? [{ x: c.position.x, y: c.position.y }] : undefined,
-        })),
-      },
-      use_coords: characters.some((c) => c.position !== undefined),
-      use_order: true,
-    };
-
-    const v4NegativePrompt = {
-      caption: {
-        base_caption: generateParams.negativePrompt,
-        char_captions: characters.map((c) => ({
-          char_caption: c.negativePrompt || "",
-        })),
-      },
-    };
-
-    setGenerateParams({ v4Prompt, v4NegativePrompt });
   };
+
+  // 適用中のキャラクター情報を取得
+  const appliedCharacters = appliedCharacterIds
+    .map((id) => characters.find((c) => c.id === id))
+    .filter((c): c is CharacterDefinition => c !== undefined);
+
+  const isV4 = generateParams.model.includes("diffusion-4");
 
   return (
     <Card title="キャラクタープロンプト">
       <div className="flex flex-col gap-3">
+        {/* 適用中のキャラクター表示 */}
+        {appliedCharacters.length > 0 && (
+          <div className="rounded-md border border-green-500/50 bg-green-500/10 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-green-400">
+                <CheckCircle size={14} />
+                適用中のキャラクター ({appliedCharacters.length})
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearAppliedCharacters}
+                className="text-red-400 hover:text-red-300"
+              >
+                <X size={14} className="mr-1" />
+                全解除
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {appliedCharacters.map((char) => (
+                <div
+                  key={char.id}
+                  className="flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-1 text-xs text-green-300"
+                >
+                  <span className="truncate max-w-[150px]">{char.name}</span>
+                  <button
+                    onClick={() => removeAppliedCharacter(char.id)}
+                    className="ml-1 hover:text-red-400"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <p className="text-xs text-nai-muted">
-            V4モデルで複数キャラクターの描き分けに対応
+            {isV4 ? "V4モデルで複数キャラクターの描き分けに対応" : "V3モデルではプロンプトに結合されます"}
           </p>
-          <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleApplyCharacters}
-              disabled={characters.length === 0}
-            >
-              <Users size={14} className="mr-1" />
-              適用
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowModal(true)}
-            >
-              <Plus size={14} className="mr-1" />
-              追加
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowModal(true)}
+          >
+            <Plus size={14} className="mr-1" />
+            追加
+          </Button>
         </div>
 
         {characters.length === 0 ? (
@@ -141,41 +145,60 @@ export function CharacterPrompts() {
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {characters.map((char) => (
-              <div
-                key={char.id}
-                className="flex items-start gap-2 rounded-md border border-nai-primary p-2"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-nai-text">
-                    {char.name}
-                  </p>
-                  <p className="text-xs text-nai-muted truncate">
-                    {char.prompt}
-                  </p>
-                  {char.position && (
-                    <p className="text-xs text-nai-muted">
-                      位置: ({char.position.x.toFixed(2)},{" "}
-                      {char.position.y.toFixed(2)})
+            {characters.map((char) => {
+              const isApplied = appliedCharacterIds.includes(char.id);
+              return (
+                <div
+                  key={char.id}
+                  className={`flex items-start gap-2 rounded-md border p-2 ${
+                    isApplied
+                      ? "border-green-500/50 bg-green-500/10"
+                      : "border-nai-primary"
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-nai-text">
+                      {char.name}
                     </p>
-                  )}
+                    <p className="text-xs text-nai-muted truncate">
+                      {char.prompt}
+                    </p>
+                    {char.negativePrompt && (
+                      <p className="text-xs text-red-400/70 truncate">
+                        NG: {char.negativePrompt}
+                      </p>
+                    )}
+                    {char.position && (
+                      <p className="text-xs text-nai-muted">
+                        位置: ({char.position.x.toFixed(2)},{" "}
+                        {char.position.y.toFixed(2)})
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant={isApplied ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => handleToggleCharacter(char.id)}
+                  >
+                    {isApplied ? "解除" : "適用"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleEdit(char)}
+                  >
+                    <Edit size={14} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteCharacter(char.id)}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleEdit(char)}
-                >
-                  <Edit size={14} />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => deleteCharacter(char.id)}
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

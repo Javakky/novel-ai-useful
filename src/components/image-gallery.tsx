@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { useAppStore } from "@/store/app-store";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Trash2, Download, Check, ImageIcon, Copy } from "lucide-react";
+import { Modal } from "@/components/ui/modal";
+import { Trash2, Download, Check, ImageIcon, Copy, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { GenerationResult } from "@/types/app";
 
 export function ImageGallery() {
   const {
@@ -16,14 +19,16 @@ export function ImageGallery() {
     setGenerateParams,
   } = useAppStore();
 
-  const handleDownload = (result: (typeof results)[0]) => {
+  const [previewResult, setPreviewResult] = useState<GenerationResult | null>(null);
+
+  const handleDownload = (result: GenerationResult) => {
     const link = document.createElement("a");
     link.href = `data:image/png;base64,${result.imageBase64}`;
     link.download = `nai-${result.id}.png`;
     link.click();
   };
 
-  const handleUseAsImg2img = (result: (typeof results)[0]) => {
+  const handleUseAsImg2img = (result: GenerationResult) => {
     setGenerateParams({
       action: "img2img",
       image: result.imageBase64,
@@ -32,7 +37,7 @@ export function ImageGallery() {
     });
   };
 
-  const handleCopyParams = (result: (typeof results)[0]) => {
+  const handleCopyParams = (result: GenerationResult) => {
     setGenerateParams({
       prompt: result.params.prompt,
       negativePrompt: result.params.negativePrompt,
@@ -104,8 +109,20 @@ export function ImageGallery() {
                   size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
+                    setPreviewResult(result);
+                  }}
+                  title="プレビュー"
+                >
+                  <Maximize2 size={14} />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     handleDownload(result);
                   }}
+                  title="ダウンロード"
                 >
                   <Download size={14} />
                 </Button>
@@ -127,7 +144,7 @@ export function ImageGallery() {
                     e.stopPropagation();
                     handleUseAsImg2img(result);
                   }}
-                  title="別バージョンを作成"
+                  title="img2imgに使用"
                 >
                   <ImageIcon size={14} />
                 </Button>
@@ -138,6 +155,7 @@ export function ImageGallery() {
                     e.stopPropagation();
                     deleteResult(result.id);
                   }}
+                  title="削除"
                 >
                   <Trash2 size={14} />
                 </Button>
@@ -149,6 +167,52 @@ export function ImageGallery() {
           </div>
         ))}
       </div>
+
+      {/* プレビューモーダル */}
+      <Modal
+        isOpen={previewResult !== null}
+        onClose={() => setPreviewResult(null)}
+        title="画像プレビュー"
+        className="max-w-4xl"
+      >
+        {previewResult && (
+          <div className="flex flex-col gap-4">
+            <img
+              src={`data:image/png;base64,${previewResult.imageBase64}`}
+              alt="プレビュー"
+              className="w-full rounded-lg"
+            />
+            <div className="grid grid-cols-2 gap-2 text-sm text-nai-muted">
+              <div>サイズ: {previewResult.params.width}x{previewResult.params.height}</div>
+              <div>ステップ: {previewResult.params.steps}</div>
+              <div>CFG: {previewResult.params.scale}</div>
+              <div>サンプラー: {previewResult.params.sampler}</div>
+              <div className="col-span-2">シード: {previewResult.params.seed}</div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  handleDownload(previewResult);
+                }}
+              >
+                <Download size={16} className="mr-2" />
+                ダウンロード
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  handleCopyParams(previewResult);
+                  setPreviewResult(null);
+                }}
+              >
+                <Copy size={16} className="mr-2" />
+                パラメータをコピー
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </Card>
   );
 }

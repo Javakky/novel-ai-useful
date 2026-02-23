@@ -23,11 +23,17 @@ const baseParams: ImageGenerateParams = {
   uncondScale: 1.0,
 };
 
+// V4 品質タグ
+const V4_QUALITY_TAGS = "no text, best quality, very aesthetic, absurdres";
+// V4 UC プリセット Heavy
+const V4_UC_PRESET_HEAVY = "blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, multiple views, logo, too many watermarks, white blank page, blank page";
+
 describe("buildRequestBody", () => {
-  it("基本的なリクエストボディを正しく構築する", () => {
+  it("基本的なリクエストボディを正しく構築する（V4）", () => {
     const result = buildRequestBody(baseParams);
 
-    expect(result.input).toBe("1girl, masterpiece");
+    // V4では品質タグが追加される
+    expect(result.input).toBe(`1girl, masterpiece, ${V4_QUALITY_TAGS}`);
     expect(result.model).toBe("nai-diffusion-4-curated-preview");
     expect(result.action).toBe("generate");
     expect(result.parameters.width).toBe(832);
@@ -37,10 +43,19 @@ describe("buildRequestBody", () => {
     expect(result.parameters.steps).toBe(28);
     expect(result.parameters.seed).toBe(42);
     expect(result.parameters.n_samples).toBe(1);
-    expect(result.parameters.negative_prompt).toBe("lowres, bad anatomy");
+    // V4ではUCプリセットがネガティブプロンプトに追加される
+    expect(result.parameters.negative_prompt).toBe(`${V4_UC_PRESET_HEAVY}, lowres, bad anatomy`);
     expect(result.parameters.noise_schedule).toBe("karras");
     expect(result.parameters.qualityToggle).toBe(true);
     expect(result.parameters.ucPreset).toBe(0);
+    // V4モデルでは sm/sm_dyn は設定されない
+    expect(result.parameters.sm).toBeUndefined();
+    expect(result.parameters.sm_dyn).toBeUndefined();
+  });
+
+  it("V3モデルで sm/sm_dyn が正しく設定される", () => {
+    const v3Params = { ...baseParams, model: "nai-diffusion-3" as const };
+    const result = buildRequestBody(v3Params);
     expect(result.parameters.sm).toBe(false);
     expect(result.parameters.sm_dyn).toBe(false);
   });
@@ -79,7 +94,15 @@ describe("buildRequestBody", () => {
     };
 
     const result = buildRequestBody(params);
-    expect(result.parameters.v4_prompt).toEqual(params.v4Prompt);
+    // base_caption は品質タグ付きプロンプトで上書きされる
+    expect(result.parameters.v4_prompt).toEqual({
+      caption: {
+        base_caption: `${params.prompt}, ${V4_QUALITY_TAGS}`,
+        char_captions: params.v4Prompt?.caption.char_captions,
+      },
+      use_coords: true,
+      use_order: true,
+    });
   });
 
   it("リファレンス画像を正しく構築する", () => {
@@ -148,6 +171,37 @@ describe("buildRequestBody", () => {
 
     const result = buildRequestBody(params);
     expect(result.parameters.reference_image_multiple).toBeUndefined();
+  });
+
+  it("seed が 0 の場合はランダムなシードを生成する", () => {
+    const params: ImageGenerateParams = {
+      ...baseParams,
+      seed: 0,
+    };
+
+    const result1 = buildRequestBody(params);
+    const result2 = buildRequestBody(params);
+
+    // seed が 0 ではなく、有効な範囲の整数であること
+    expect(result1.parameters.seed).not.toBe(0);
+    expect(result1.parameters.seed).toBeGreaterThan(0);
+    expect(result1.parameters.seed).toBeLessThan(4294967295);
+
+    // 2回呼び出すと異なるシードが生成される（確率的に）
+    // 注: 極めて低い確率で同じ値になる可能性があるが、実用上は問題ない
+    expect(result1.parameters.seed).not.toBe(result2.parameters.seed);
+  });
+
+  it("seed が undefined の場合はランダムなシードを生成する", () => {
+    const params = {
+      ...baseParams,
+      seed: undefined as unknown as number,
+    };
+
+    const result = buildRequestBody(params);
+
+    expect(result.parameters.seed).not.toBe(0);
+    expect(result.parameters.seed).toBeGreaterThan(0);
   });
 });
 

@@ -11,6 +11,8 @@ export interface PromptPreset {
   name: string;
   /** プロンプトテキスト */
   prompt: string;
+  /** ネガティブプロンプト（任意） */
+  negativePrompt?: string;
   /** 説明（任意） */
   description?: string;
   /** 作成日時 */
@@ -110,7 +112,7 @@ export interface ExportMetadata {
   generatedAt: string;
 }
 
-/** デフォルトの生成パラメータ */
+/** デフォルトの生成パラメータ（NovelAI V4 公式デフォルトに準拠） */
 export const DEFAULT_GENERATE_PARAMS: ImageGenerateParams = {
   prompt: "",
   negativePrompt: "",
@@ -118,9 +120,9 @@ export const DEFAULT_GENERATE_PARAMS: ImageGenerateParams = {
   action: "generate",
   width: 832,
   height: 1216,
-  scale: 5.0,
-  sampler: "k_euler",
-  steps: 28,
+  scale: 5.5,
+  sampler: "k_euler_ancestral",
+  steps: 23,
   seed: 0,
   nSamples: 1,
   ucPreset: 0,
@@ -130,4 +132,8 @@ export const DEFAULT_GENERATE_PARAMS: ImageGenerateParams = {
   noiseSchedule: "karras",
   cfgRescale: 0,
   uncondScale: 1.0,
+  // V4キャラクター関連（リセット時に確実にクリア）
+  v4Prompt: undefined,
+  v4NegativePrompt: undefined,
+  characterPrompts: undefined,
 };

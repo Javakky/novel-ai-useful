@@ -8,7 +8,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { generateImage, NovelAIApiError } from "@/lib/novelai-client";
-import { extractImagesFromZip } from "@/lib/zip-utils";
 import type { ImageGenerateParams } from "@/types/novelai";
 
 /** Novel AI API のステータスコードのうち、クライアントに伝播するもの */
@@ -28,6 +27,13 @@ export async function POST(request: NextRequest) {
     let params: ImageGenerateParams;
     try {
       params = await request.json();
+      // デバッグ: クライアントから受け取ったパラメータ
+      console.log("=== クライアントからのリクエスト ===");
+      console.log("seed:", params.seed);
+      console.log("prompt:", params.prompt?.substring(0, 50) + "...");
+      console.log("v4Prompt:", params.v4Prompt ? "あり" : "なし");
+      console.log("characterPrompts:", params.characterPrompts?.length ?? 0, "件");
+      console.log("================================");
     } catch {
       return NextResponse.json(
         { error: "リクエストボディが不正です" },
@@ -62,18 +68,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Novel AI API 呼び出し
-    const zipData = await generateImage(params, token);
-
-    // ZIP から画像を抽出
-    const images = await extractImagesFromZip(zipData);
-
-    if (images.length === 0) {
-      return NextResponse.json(
-        { error: "画像の生成に失敗しました" },
-        { status: 500 }
-      );
-    }
+    // Novel AI API 呼び出し（ストリームエンドポイント）
+    const images = await generateImage(params, token);
 
     return NextResponse.json({ images });
   } catch (error) {

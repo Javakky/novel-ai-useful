@@ -30,12 +30,20 @@ interface AppState {
 
   // プロンプトプリセット
   presets: PromptPreset[];
-  addPreset: (name: string, prompt: string, description?: string) => string;
+  addPreset: (name: string, prompt: string, negativePrompt?: string, description?: string) => string;
   updatePreset: (
     id: string,
     updates: Partial<Omit<PromptPreset, "id" | "createdAt">>
   ) => void;
   deletePreset: (id: string) => void;
+
+  // 適用中のプリセットID
+  appliedPresetIds: string[];
+  applyPreset: (id: string) => void;
+  removeAppliedPreset: (id: string) => void;
+  clearAppliedPresets: () => void;
+  getAppliedPresetsPrompt: () => string;
+  getAppliedPresetsNegativePrompt: () => string;
 
   // プロンプトグループ
   groups: PromptGroup[];
@@ -59,6 +67,13 @@ interface AppState {
     updates: Partial<Omit<CharacterDefinition, "id" | "createdAt">>
   ) => void;
   deleteCharacter: (id: string) => void;
+
+  // 適用中のキャラクターID
+  appliedCharacterIds: string[];
+  applyCharacter: (id: string) => void;
+  removeAppliedCharacter: (id: string) => void;
+  clearAppliedCharacters: () => void;
+  getAppliedCharacters: () => CharacterDefinition[];
 
   // Vibe Transfer 設定
   vibeConfigs: VibeTransferConfig[];
@@ -102,13 +117,13 @@ export const useAppStore = create<AppState>()(
 
       // プロンプトプリセット
       presets: [],
-      addPreset: (name, prompt, description) => {
+      addPreset: (name, prompt, negativePrompt, description) => {
         const id = generateId();
         const now = nowISO();
         set((state) => ({
           presets: [
             ...state.presets,
-            { id, name, prompt, description, createdAt: now, updatedAt: now },
+            { id, name, prompt, negativePrompt, description, createdAt: now, updatedAt: now },
           ],
         }));
         return id;
@@ -127,7 +142,37 @@ export const useAppStore = create<AppState>()(
             ...g,
             presetIds: g.presetIds.filter((pid) => pid !== id),
           })),
+          // 適用中からも削除
+          appliedPresetIds: state.appliedPresetIds.filter((pid) => pid !== id),
         })),
+
+      // 適用中のプリセット
+      appliedPresetIds: [],
+      applyPreset: (id) =>
+        set((state) => ({
+          appliedPresetIds: state.appliedPresetIds.includes(id)
+            ? state.appliedPresetIds
+            : [...state.appliedPresetIds, id],
+        })),
+      removeAppliedPreset: (id) =>
+        set((state) => ({
+          appliedPresetIds: state.appliedPresetIds.filter((pid) => pid !== id),
+        })),
+      clearAppliedPresets: () => set({ appliedPresetIds: [] }),
+      getAppliedPresetsPrompt: () => {
+        const state = get();
+        return state.appliedPresetIds
+          .map((id) => state.presets.find((p) => p.id === id)?.prompt ?? "")
+          .filter(Boolean)
+          .join(", ");
+      },
+      getAppliedPresetsNegativePrompt: () => {
+        const state = get();
+        return state.appliedPresetIds
+          .map((id) => state.presets.find((p) => p.id === id)?.negativePrompt ?? "")
+          .filter(Boolean)
+          .join(", ");
+      },
 
       // プロンプトグループ
       groups: [],
@@ -191,7 +236,29 @@ export const useAppStore = create<AppState>()(
       deleteCharacter: (id) =>
         set((state) => ({
           characters: state.characters.filter((c) => c.id !== id),
+          // 適用中からも削除
+          appliedCharacterIds: state.appliedCharacterIds.filter((cid) => cid !== id),
         })),
+
+      // 適用中のキャラクター
+      appliedCharacterIds: [],
+      applyCharacter: (id) =>
+        set((state) => ({
+          appliedCharacterIds: state.appliedCharacterIds.includes(id)
+            ? state.appliedCharacterIds
+            : [...state.appliedCharacterIds, id],
+        })),
+      removeAppliedCharacter: (id) =>
+        set((state) => ({
+          appliedCharacterIds: state.appliedCharacterIds.filter((cid) => cid !== id),
+        })),
+      clearAppliedCharacters: () => set({ appliedCharacterIds: [] }),
+      getAppliedCharacters: () => {
+        const state = get();
+        return state.appliedCharacterIds
+          .map((id) => state.characters.find((c) => c.id === id))
+          .filter((c): c is CharacterDefinition => c !== undefined);
+      },
 
       // Vibe Transfer 設定
       vibeConfigs: [],
@@ -245,12 +312,15 @@ export const useAppStore = create<AppState>()(
     {
       name: "novel-ai-useful-store",
       // 画像データは巨大なので永続化から除外
+      // シードは常に 0 にリセット（毎回ランダム生成するため）
       partialize: (state) => ({
         apiToken: state.apiToken,
-        generateParams: state.generateParams,
+        generateParams: { ...state.generateParams, seed: 0 },
         presets: state.presets,
         groups: state.groups,
         characters: state.characters,
+        appliedPresetIds: state.appliedPresetIds,
+        appliedCharacterIds: state.appliedCharacterIds,
         vibeConfigs: state.vibeConfigs.map((v) => ({
           ...v,
           referenceImage: {

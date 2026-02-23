@@ -18,12 +18,16 @@ describe("DEFAULT_GENERATE_PARAMS", () => {
     expect(DEFAULT_GENERATE_PARAMS.action).toBe("generate");
   });
 
-  it("V4推奨のCFGスケール", () => {
-    expect(DEFAULT_GENERATE_PARAMS.scale).toBe(5.0);
+  it("NovelAI公式デフォルトのCFGスケール", () => {
+    expect(DEFAULT_GENERATE_PARAMS.scale).toBe(5.5);
   });
 
-  it("デフォルトサンプラーがEuler", () => {
-    expect(DEFAULT_GENERATE_PARAMS.sampler).toBe("k_euler");
+  it("NovelAI公式デフォルトのサンプラー（Euler Ancestral）", () => {
+    expect(DEFAULT_GENERATE_PARAMS.sampler).toBe("k_euler_ancestral");
+  });
+
+  it("NovelAI公式デフォルトのステップ数", () => {
+    expect(DEFAULT_GENERATE_PARAMS.steps).toBe(23);
   });
 
   it("品質タグがデフォルトで有効", () => {

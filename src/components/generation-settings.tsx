@@ -4,6 +4,8 @@ import { useAppStore } from "@/store/app-store";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { RotateCcw } from "lucide-react";
 import {
   MODEL_INFO,
   SAMPLER_INFO,
@@ -15,7 +17,7 @@ import {
 } from "@/types/novelai";
 
 export function GenerationSettings() {
-  const { generateParams, setGenerateParams } = useAppStore();
+  const { generateParams, setGenerateParams, resetGenerateParams } = useAppStore();
 
   const modelOptions = Object.entries(MODEL_INFO).map(([value, info]) => ({
     value,
@@ -188,6 +190,16 @@ export function GenerationSettings() {
             SMEA DYN
           </label>
         </div>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={resetGenerateParams}
+          className="mt-2 w-full"
+        >
+          <RotateCcw size={16} className="mr-2" />
+          デフォルトに戻す
+        </Button>
       </div>
     </Card>
   );

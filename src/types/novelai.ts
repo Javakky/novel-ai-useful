@@ -97,9 +97,20 @@ export interface ImageGenerateParams {
   v4NegativePrompt?: {
     caption: {
       base_caption: string;
-      char_captions: { char_caption: string }[];
+      char_captions: {
+        char_caption: string;
+        centers?: { x: number; y: number }[];
+      }[];
     };
+    legacy_uc?: boolean;
   };
+  /** キャラクタープロンプト配列（V4用） */
+  characterPrompts?: {
+    prompt: string;
+    uc: string;
+    center: { x: number; y: number };
+    enabled: boolean;
+  }[];
 
   /** リファレンス画像（Vibe Transfer） */
   referenceImages?: ReferenceImage[];
