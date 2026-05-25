@@ -104,11 +104,24 @@ export function VibeTransfer() {
     }
   };
 
+  const currentRefs = generateParams.referenceImages ?? [];
+  // 適用中の画像 base64 セット (重複適用判定に使う)。
+  const appliedImageSet = new Set(currentRefs.map((r) => r.image));
+
+  // 「選択画像をリファレンスに」が押せるかどうか。選択中の結果が既に適用済みなら不可。
+  const selectedResult = selectedResultId
+    ? results.find((r) => r.id === selectedResultId)
+    : undefined;
+  const isSelectedResultApplied = selectedResult
+    ? appliedImageSet.has(selectedResult.imageBase64)
+    : false;
+
   const handleApplyConfig = (configId: string) => {
     const config = vibeConfigs.find((v) => v.id === configId);
     if (!config || !config.referenceImage.image) return;
+    // 同じ画像が既に適用済みなら何もしない (重複適用を防ぐ)。
+    if (appliedImageSet.has(config.referenceImage.image)) return;
 
-    const currentRefs = generateParams.referenceImages ?? [];
     setGenerateParams({
       referenceImages: [...currentRefs, config.referenceImage],
     });
@@ -120,22 +133,29 @@ export function VibeTransfer() {
     );
     if (autoConfigs.length === 0) return;
 
-    setGenerateParams({
-      referenceImages: autoConfigs.map((v) => v.referenceImage),
-    });
+    // 既存の適用中分は維持しつつ、未適用の autoApply 設定だけ追加する。
+    // 既に手動で適用していたものを保全したいケースを想定。
+    const merged = [...currentRefs];
+    const seen = new Set(appliedImageSet);
+    for (const v of autoConfigs) {
+      if (seen.has(v.referenceImage.image)) continue;
+      seen.add(v.referenceImage.image);
+      merged.push(v.referenceImage);
+    }
+    setGenerateParams({ referenceImages: merged });
   };
 
   const handleUseResultAsReference = () => {
     if (!selectedResultId) return;
     const result = results.find((r) => r.id === selectedResultId);
     if (!result) return;
+    if (appliedImageSet.has(result.imageBase64)) return;
 
     const ref: ReferenceImage = {
       image: result.imageBase64,
       informationExtracted: 1.0,
       referenceStrength: 0.6,
     };
-    const currentRefs = generateParams.referenceImages ?? [];
     setGenerateParams({
       referenceImages: [...currentRefs, ref],
     });
@@ -144,8 +164,6 @@ export function VibeTransfer() {
   const handleClearReferences = () => {
     setGenerateParams({ referenceImages: [] });
   };
-
-  const currentRefs = generateParams.referenceImages ?? [];
 
   return (
     <Card title="Vibe Transfer / リファレンス画像">
@@ -211,10 +229,10 @@ export function VibeTransfer() {
             variant="ghost"
             size="sm"
             onClick={handleUseResultAsReference}
-            disabled={!selectedResultId}
+            disabled={!selectedResultId || isSelectedResultApplied}
           >
             <ImageIcon size={14} className="mr-1" />
-            選択画像をリファレンスに
+            {isSelectedResultApplied ? "選択画像は適用済み" : "選択画像をリファレンスに"}
           </Button>
         </div>
 
@@ -226,6 +244,8 @@ export function VibeTransfer() {
             </p>
             {vibeConfigs.map((config) => {
               const hasImage = Boolean(config.referenceImage.image);
+              const isApplied =
+                hasImage && appliedImageSet.has(config.referenceImage.image);
               return (
                 <div
                   key={config.id}
@@ -264,8 +284,9 @@ export function VibeTransfer() {
                       variant="ghost"
                       size="sm"
                       onClick={() => handleApplyConfig(config.id)}
+                      disabled={isApplied}
                     >
-                      適用
+                      {isApplied ? "適用済み" : "適用"}
                     </Button>
                   ) : (
                     <Button
