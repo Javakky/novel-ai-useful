@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --nai-bg: #1a1a2e;
+  --nai-surface: #16213e;
+  --nai-primary: #0f3460;
+  --nai-accent: #e94560;
+  --nai-text: #eaeaea;
+  --nai-muted: #8a8a9a;
+}
+
+body {
+  background-color: var(--nai-bg);
+  color: var(--nai-text);
+}
+
+/* スクロールバーのカスタマイズ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--nai-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--nai-primary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--nai-accent);
+}
+
+/* テキストエリアのリサイズ */
+textarea {
+  resize: vertical;
+}
