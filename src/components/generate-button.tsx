@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, Loader2, AlertCircle, Info, Copy, Check } from "lucide-react";
 import { useState, useCallback } from "react";
 import { buildRequestBody } from "@/lib/novelai-client";
+import { buildMergedParams as mergeParams } from "@/lib/merge-params";
 import type { ImageGenerateParams } from "@/types/novelai";
 
 export function GenerateButton() {
@@ -15,7 +16,6 @@ export function GenerateButton() {
     setIsGenerating,
     addResult,
     vibeConfigs,
-    characters,
     getAppliedPresetsPrompt,
     getAppliedPresetsNegativePrompt,
     appliedPresetIds,
@@ -25,77 +25,15 @@ export function GenerateButton() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // V4モデルかどうか
-  const isV4 = generateParams.model.includes("diffusion-4");
-
   // 統合パラメータを構築する共通関数
   const buildMergedParams = useCallback((): ImageGenerateParams => {
-    const params = { ...generateParams };
-
-    // 適用中のプリセットをプロンプトにマージ
-    const presetPrompt = getAppliedPresetsPrompt();
-    if (presetPrompt) {
-      params.prompt = params.prompt
-        ? `${params.prompt}, ${presetPrompt}`
-        : presetPrompt;
-    }
-
-    // 適用中のプリセットのネガティブプロンプトをマージ
-    const presetNegPrompt = getAppliedPresetsNegativePrompt();
-    if (presetNegPrompt) {
-      params.negativePrompt = params.negativePrompt
-        ? `${params.negativePrompt}, ${presetNegPrompt}`
-        : presetNegPrompt;
-    }
-
-    // 適用中のキャラクターを取得
-    const appliedChars = getAppliedCharacters();
-
-    // V4モデルでキャラクターが適用されている場合、v4Prompt を構築
-    if (isV4 && appliedChars.length > 0) {
-      params.v4Prompt = {
-        caption: {
-          base_caption: params.prompt,
-          char_captions: appliedChars.map((c) => ({
-            char_caption: c.prompt,
-            centers: [{ x: c.position?.x ?? 0.5, y: c.position?.y ?? 0.5 }],
-          })),
-        },
-        use_coords: false,
-        use_order: true,
-      };
-
-      // ネガティブプロンプトがあるキャラクターのみ含める
-      const charNegCaptions = appliedChars
-        .filter((c) => c.negativePrompt)
-        .map((c) => ({
-          char_caption: c.negativePrompt,
-          centers: [{ x: c.position?.x ?? 0.5, y: c.position?.y ?? 0.5 }],
-        }));
-
-      params.v4NegativePrompt = {
-        caption: {
-          base_caption: params.negativePrompt,
-          char_captions: charNegCaptions,
-        },
-        legacy_uc: false,
-      };
-
-      params.characterPrompts = appliedChars.map((c) => ({
-        prompt: c.prompt,
-        uc: c.negativePrompt || "",
-        center: { x: c.position?.x ?? 0.5, y: c.position?.y ?? 0.5 },
-        enabled: true,
-      }));
-    } else {
-      // キャラクターが適用されていない場合は v4Prompt をクリア
-      params.v4Prompt = undefined;
-      params.v4NegativePrompt = undefined;
-      params.characterPrompts = undefined;
-    }
-
-    return params;
-  }, [generateParams, getAppliedPresetsPrompt, getAppliedPresetsNegativePrompt, getAppliedCharacters, isV4]);
+    return mergeParams({
+      generateParams,
+      presetPrompt: getAppliedPresetsPrompt(),
+      presetNegativePrompt: getAppliedPresetsNegativePrompt(),
+      appliedCharacters: getAppliedCharacters(),
+    });
+  }, [generateParams, getAppliedPresetsPrompt, getAppliedPresetsNegativePrompt, getAppliedCharacters]);
 
   // 適用中のキャラクター数
   const appliedCharacterCount = appliedCharacterIds.length;
