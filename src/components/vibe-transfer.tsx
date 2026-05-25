@@ -17,6 +17,7 @@ export function VibeTransfer() {
     addVibeConfig,
     updateVibeConfig,
     deleteVibeConfig,
+    relinkVibeImage,
     generateParams,
     setGenerateParams,
     results,
@@ -26,20 +27,37 @@ export function VibeTransfer() {
   const [showModal, setShowModal] = useState(false);
   const [configName, setConfigName] = useState("");
   const [imageBase64, setImageBase64] = useState("");
+  const [imageFileName, setImageFileName] = useState<string | undefined>(undefined);
   const [infoExtracted, setInfoExtracted] = useState(1.0);
   const [refStrength, setRefStrength] = useState(0.6);
   const [autoApply, setAutoApply] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const relinkInputRef = useRef<HTMLInputElement>(null);
+  const [relinkingId, setRelinkingId] = useState<string | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const base64 = await fileToBase64(file);
-    setImageBase64(base64);
+    setFormError(null);
+    try {
+      const base64 = await fileToBase64(file);
+      setImageBase64(base64);
+      setImageFileName(file.name);
+      // 設定名が未入力なら、拡張子を除いたファイル名で埋める
+      if (!configName.trim()) {
+        const baseName = file.name.replace(/\.[^.]+$/, "");
+        if (baseName) setConfigName(baseName);
+      }
+    } catch {
+      setFormError("画像の読み込みに失敗しました");
+    }
   };
 
+  const canSave = configName.trim().length > 0 && imageBase64.length > 0;
+
   const handleSave = () => {
-    if (!configName.trim() || !imageBase64) return;
+    if (!canSave) return;
     addVibeConfig({
       name: configName,
       referenceImage: {
@@ -48,6 +66,7 @@ export function VibeTransfer() {
         referenceStrength: refStrength,
       },
       autoApply,
+      originalFileName: imageFileName,
     });
     resetForm();
   };
@@ -56,9 +75,33 @@ export function VibeTransfer() {
     setShowModal(false);
     setConfigName("");
     setImageBase64("");
+    setImageFileName(undefined);
     setInfoExtracted(1.0);
     setRefStrength(0.6);
     setAutoApply(false);
+    setFormError(null);
+  };
+
+  const handleRelinkClick = (id: string) => {
+    setRelinkingId(id);
+    // 同じファイルを連続選択しても onChange が発火するように value を初期化
+    if (relinkInputRef.current) relinkInputRef.current.value = "";
+    relinkInputRef.current?.click();
+  };
+
+  const handleRelinkFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    const targetId = relinkingId;
+    setRelinkingId(null);
+    if (!file || !targetId) return;
+    try {
+      const base64 = await fileToBase64(file);
+      relinkVibeImage(targetId, base64, file.name);
+    } catch (err) {
+      console.error("再リンクに失敗しました:", err);
+    }
   };
 
   const handleApplyConfig = (configId: string) => {
@@ -181,53 +224,90 @@ export function VibeTransfer() {
             <p className="text-xs text-nai-muted font-medium">
               マスター画像一覧:
             </p>
-            {vibeConfigs.map((config) => (
-              <div
-                key={config.id}
-                className="flex items-center gap-2 rounded-md border border-nai-primary p-2"
-              >
-                {config.referenceImage.image && (
-                  <img
-                    src={`data:image/png;base64,${config.referenceImage.image}`}
-                    alt={config.name}
-                    className="h-12 w-12 rounded object-cover flex-shrink-0"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-nai-text">{config.name}</p>
-                  <p className="text-xs text-nai-muted">
-                    {config.autoApply ? "自動適用: ON" : "自動適用: OFF"}
-                  </p>
+            {vibeConfigs.map((config) => {
+              const hasImage = Boolean(config.referenceImage.image);
+              return (
+                <div
+                  key={config.id}
+                  className="flex items-center gap-2 rounded-md border border-nai-primary p-2"
+                >
+                  {hasImage ? (
+                    <img
+                      src={`data:image/png;base64,${config.referenceImage.image}`}
+                      alt={config.name}
+                      className="h-12 w-12 rounded object-cover flex-shrink-0"
+                    />
+                  ) : (
+                    <div
+                      className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded border border-dashed border-nai-muted text-nai-muted"
+                      title="画像が見つかりません"
+                    >
+                      <ImageIcon size={18} />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-nai-text truncate">{config.name}</p>
+                    <p className="text-xs text-nai-muted">
+                      {config.autoApply ? "自動適用: ON" : "自動適用: OFF"}
+                    </p>
+                    {!hasImage && (
+                      <p className="text-xs text-yellow-400 truncate">
+                        画像未保存
+                        {config.originalFileName
+                          ? ` (元: ${config.originalFileName})`
+                          : ""}
+                      </p>
+                    )}
+                  </div>
+                  {hasImage ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleApplyConfig(config.id)}
+                    >
+                      適用
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRelinkClick(config.id)}
+                    >
+                      再リンク
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      updateVibeConfig(config.id, {
+                        autoApply: !config.autoApply,
+                      })
+                    }
+                  >
+                    {config.autoApply ? "OFF" : "ON"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteVibeConfig(config.id)}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleApplyConfig(config.id)}
-                >
-                  適用
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    updateVibeConfig(config.id, {
-                      autoApply: !config.autoApply,
-                    })
-                  }
-                >
-                  {config.autoApply ? "OFF" : "ON"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => deleteVibeConfig(config.id)}
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
+
+        {/* 再リンク用の隠しファイル入力 (各 config から共有) */}
+        <input
+          ref={relinkInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={handleRelinkFileChange}
+          className="hidden"
+        />
       </div>
 
       {/* マスター画像追加モーダル */}
@@ -285,11 +365,21 @@ export function VibeTransfer() {
             />
             自動適用する
           </label>
+          {formError && (
+            <p className="text-sm text-red-400">{formError}</p>
+          )}
+          {!canSave && !formError && (
+            <p className="text-xs text-nai-muted">
+              設定名を入力し、画像を選択すると保存できます
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={resetForm}>
               キャンセル
             </Button>
-            <Button onClick={handleSave}>保存</Button>
+            <Button onClick={handleSave} disabled={!canSave}>
+              保存
+            </Button>
           </div>
         </div>
       </Modal>

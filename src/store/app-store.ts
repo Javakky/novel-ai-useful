@@ -17,6 +17,12 @@ import type {
 } from "@/types/app";
 import { DEFAULT_GENERATE_PARAMS } from "@/types/app";
 import { generateId, nowISO } from "@/lib/utils";
+import {
+  setVibeImage,
+  deleteVibeImage,
+  getAllVibeImages,
+  hydrateVibeConfigsWithImages,
+} from "@/lib/vibe-image-storage";
 
 interface AppState {
   // 認証
@@ -83,6 +89,12 @@ interface AppState {
     updates: Partial<Omit<VibeTransferConfig, "id" | "createdAt">>
   ) => void;
   deleteVibeConfig: (id: string) => void;
+  /**
+   * 既存の vibe config に画像だけ差し替える。
+   * リロード後に IndexedDB から復元できなかった (旧データや別端末) ときに、
+   * 名前 / 抽出量 / 強度 / 自動適用 を保ったままサムネだけ復活させる。
+   */
+  relinkVibeImage: (id: string, base64: string, fileName?: string) => void;
 
   // 生成結果
   results: GenerationResult[];
@@ -264,6 +276,10 @@ export const useAppStore = create<AppState>()(
       vibeConfigs: [],
       addVibeConfig: (config) => {
         const id = generateId();
+        // 画像本体は IndexedDB に逃がす (localStorage 5-10MB 制限を回避)
+        void setVibeImage(id, config.referenceImage.image).catch((e) => {
+          console.error("Vibe 画像の永続化に失敗しました:", e);
+        });
         set((state) => ({
           vibeConfigs: [
             ...state.vibeConfigs,
@@ -272,16 +288,43 @@ export const useAppStore = create<AppState>()(
         }));
         return id;
       },
-      updateVibeConfig: (id, updates) =>
+      updateVibeConfig: (id, updates) => {
+        // 画像が含まれていれば IDB 側も追従して更新する
+        if (updates.referenceImage?.image) {
+          void setVibeImage(id, updates.referenceImage.image).catch((e) => {
+            console.error("Vibe 画像の更新に失敗しました:", e);
+          });
+        }
         set((state) => ({
           vibeConfigs: state.vibeConfigs.map((v) =>
             v.id === id ? { ...v, ...updates } : v
           ),
-        })),
-      deleteVibeConfig: (id) =>
+        }));
+      },
+      deleteVibeConfig: (id) => {
+        void deleteVibeImage(id).catch((e) => {
+          console.error("Vibe 画像の削除に失敗しました:", e);
+        });
         set((state) => ({
           vibeConfigs: state.vibeConfigs.filter((v) => v.id !== id),
-        })),
+        }));
+      },
+      relinkVibeImage: (id, base64, fileName) => {
+        void setVibeImage(id, base64).catch((e) => {
+          console.error("Vibe 画像の再リンクに失敗しました:", e);
+        });
+        set((state) => ({
+          vibeConfigs: state.vibeConfigs.map((v) =>
+            v.id === id
+              ? {
+                  ...v,
+                  referenceImage: { ...v.referenceImage, image: base64 },
+                  originalFileName: fileName ?? v.originalFileName,
+                }
+              : v
+          ),
+        }));
+      },
 
       // 生成結果
       results: [],
@@ -311,7 +354,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "novel-ai-useful-store",
-      // 画像データは巨大なので永続化から除外
+      // 画像データは巨大なので localStorage から除外し、IndexedDB に逃がす。
       // シードは常に 0 にリセット（毎回ランダム生成するため）
       partialize: (state) => ({
         apiToken: state.apiToken,
@@ -325,10 +368,25 @@ export const useAppStore = create<AppState>()(
           ...v,
           referenceImage: {
             ...v.referenceImage,
-            image: "", // 画像データは永続化しない
+            image: "", // 画像本体は IndexedDB 側に保存しているのでここでは空にする
           },
         })),
       }),
+      // 復元後、IndexedDB から画像を読み込んで vibeConfigs に注入する。
+      // これがないと、リロード時に枠だけ残ってサムネが消える状態になる。
+      onRehydrateStorage: () => (state, error) => {
+        if (error || !state) return;
+        void (async () => {
+          try {
+            const images = await getAllVibeImages();
+            useAppStore.setState((s) => ({
+              vibeConfigs: hydrateVibeConfigsWithImages(s.vibeConfigs, images),
+            }));
+          } catch (e) {
+            console.error("Vibe 画像の復元に失敗しました:", e);
+          }
+        })();
+      },
     }
   )
 );

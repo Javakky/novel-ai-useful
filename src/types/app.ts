@@ -62,6 +62,12 @@ export interface VibeTransferConfig {
   autoApply: boolean;
   /** 作成日時 */
   createdAt: string;
+  /**
+   * 元の画像ファイル名 (拡張子込み)。
+   * ブラウザはローカルパスを保存できないため、再リンク時のヒントとして使う。
+   * IndexedDB が消えたり別端末で開いたときに「どの画像を再選択すべきか」を伝える。
+   */
+  originalFileName?: string;
 }
 
 /** 生成結果 */
