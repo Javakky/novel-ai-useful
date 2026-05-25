@@ -7,7 +7,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateImage, NovelAIApiError } from "@/lib/novelai-client";
+import { NovelAIApiError } from "@/lib/novelai-client";
+import { generateImage } from "@/lib/novelai-server";
 import type { ImageGenerateParams } from "@/types/novelai";
 
 /** Novel AI API のステータスコードのうち、クライアントに伝播するもの */

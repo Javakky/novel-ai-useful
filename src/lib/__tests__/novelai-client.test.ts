@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { buildRequestBody, NovelAIApiError } from "../novelai-client";
+import {
+  generateImage,
+  _clearVibeCacheForTest,
+} from "../novelai-server";
 import type { ImageGenerateParams } from "@/types/novelai";
 
 const baseParams: ImageGenerateParams = {
@@ -105,9 +109,10 @@ describe("buildRequestBody", () => {
     });
   });
 
-  it("リファレンス画像を正しく構築する", () => {
+  it("リファレンス画像を正しく構築する（V3: information_extracted を含む）", () => {
     const params: ImageGenerateParams = {
       ...baseParams,
+      model: "nai-diffusion-3",
       referenceImages: [
         {
           image: "base64data1",
@@ -133,6 +138,49 @@ describe("buildRequestBody", () => {
     expect(result.parameters.reference_strength_multiple).toEqual([
       0.6, 0.8,
     ]);
+  });
+
+  it("V4 Curated では reference_information_extracted_multiple を含めない (事前エンコードで消費済み)", () => {
+    const params: ImageGenerateParams = {
+      ...baseParams,
+      model: "nai-diffusion-4-curated-preview",
+      referenceImages: [
+        {
+          image: "vibetoken1",
+          informationExtracted: 1.0,
+          referenceStrength: 0.6,
+        },
+      ],
+    };
+
+    const result = buildRequestBody(params);
+    expect(result.parameters.reference_image_multiple).toEqual(["vibetoken1"]);
+    expect(result.parameters.reference_strength_multiple).toEqual([0.6]);
+    expect(
+      result.parameters.reference_information_extracted_multiple
+    ).toBeUndefined();
+  });
+
+  it("V4 Full でも reference_information_extracted_multiple を含めない (V4 Full も vibe 事前エンコード必須)", () => {
+    // 回帰: V4 Full で raw base64 を reference_image_multiple に渡すと
+    // gen_id 付き "Internal Server Error" でストリームが落ちる。
+    const params: ImageGenerateParams = {
+      ...baseParams,
+      model: "nai-diffusion-4-full",
+      referenceImages: [
+        {
+          image: "vibetoken1",
+          informationExtracted: 1.0,
+          referenceStrength: 0.6,
+        },
+      ],
+    };
+
+    const result = buildRequestBody(params);
+    expect(result.parameters.reference_image_multiple).toEqual(["vibetoken1"]);
+    expect(
+      result.parameters.reference_information_extracted_multiple
+    ).toBeUndefined();
   });
 
   it("img2img パラメータを正しく設定する", () => {
@@ -202,6 +250,143 @@ describe("buildRequestBody", () => {
 
     expect(result.parameters.seed).not.toBe(0);
     expect(result.parameters.seed).toBeGreaterThan(0);
+  });
+});
+
+describe("encodeVibe キャッシュ (generateImage 経由)", () => {
+  /**
+   * encodeVibe は内部 export しないため、generateImage 経由で fetch 呼び出し回数を観測する。
+   *
+   * generateImage の戻り値は msgpack デコード処理を経るが、空レスポンス → 例外で
+   * 早期 throw する。我々が確認したいのは encode-vibe のフェッチ回数だけなので、
+   * 生成本体のエラーは catch して無視する。
+   */
+  beforeEach(() => {
+    _clearVibeCacheForTest();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("同じリファレンス画像で 2 回呼んでも encode-vibe は 1 回しか叩かない", async () => {
+    const encodeCalls: string[] = [];
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockImplementation(async (input) => {
+        const url = typeof input === "string" ? input : (input as Request).url;
+        if (url.includes("/ai/encode-vibe")) {
+          encodeCalls.push(url);
+          return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+        }
+        // 生成エンドポイントは空レスポンスを返して早期 throw させる
+        return new Response(new Uint8Array(0), { status: 200 });
+      });
+
+    const refParams: ImageGenerateParams = {
+      ...baseParams,
+      model: "nai-diffusion-4-curated-preview",
+      referenceImages: [
+        {
+          image: "samebase64image",
+          informationExtracted: 1.0,
+          referenceStrength: 0.6,
+        },
+      ],
+    };
+
+    // 1 回目
+    await generateImage(refParams, "fake-token").catch(() => {});
+    // 2 回目 (同じ画像・同じパラメータ)
+    await generateImage(refParams, "fake-token").catch(() => {});
+
+    expect(encodeCalls.length).toBe(1);
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("information_extracted が異なれば別キャッシュとして再エンコードする", async () => {
+    const encodeCalls: number[] = [];
+    vi.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/ai/encode-vibe")) {
+        encodeCalls.push(Date.now());
+        return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+      }
+      return new Response(new Uint8Array(0), { status: 200 });
+    });
+
+    const makeParams = (info: number): ImageGenerateParams => ({
+      ...baseParams,
+      model: "nai-diffusion-4-curated-preview",
+      referenceImages: [
+        {
+          image: "samebase64image",
+          informationExtracted: info,
+          referenceStrength: 0.6,
+        },
+      ],
+    });
+
+    await generateImage(makeParams(1.0), "fake-token").catch(() => {});
+    await generateImage(makeParams(0.5), "fake-token").catch(() => {});
+
+    expect(encodeCalls.length).toBe(2);
+  });
+
+  it("V4 Full でも encode-vibe を叩く (raw base64 で叩くと生成が 500 で落ちる回帰防止)", async () => {
+    const encodeCalls: number[] = [];
+    vi.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/ai/encode-vibe")) {
+        encodeCalls.push(Date.now());
+        return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+      }
+      return new Response(new Uint8Array(0), { status: 200 });
+    });
+
+    const v4FullParams: ImageGenerateParams = {
+      ...baseParams,
+      model: "nai-diffusion-4-full",
+      referenceImages: [
+        {
+          image: "rawbase64image",
+          informationExtracted: 1.0,
+          referenceStrength: 0.6,
+        },
+      ],
+    };
+
+    await generateImage(v4FullParams, "fake-token").catch(() => {});
+
+    expect(encodeCalls.length).toBe(1);
+  });
+
+  it("V3 モデルでは encode-vibe を一切叩かない", async () => {
+    const encodeCalls: number[] = [];
+    vi.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/ai/encode-vibe")) {
+        encodeCalls.push(Date.now());
+        return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+      }
+      return new Response(new Uint8Array(0), { status: 200 });
+    });
+
+    const v3Params: ImageGenerateParams = {
+      ...baseParams,
+      model: "nai-diffusion-3",
+      referenceImages: [
+        {
+          image: "anybase64image",
+          informationExtracted: 1.0,
+          referenceStrength: 0.6,
+        },
+      ],
+    };
+
+    await generateImage(v3Params, "fake-token").catch(() => {});
+
+    expect(encodeCalls.length).toBe(0);
   });
 });
 

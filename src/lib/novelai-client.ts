@@ -1,18 +1,26 @@
 /**
- * Novel AI API クライアント
+ * Novel AI API 共通ユーティリティ (クライアント/サーバー両用)
  *
- * サーバーサイド（API Routes）から呼び出すためのクライアント。
- * ブラウザから直接APIを叩かず、Next.js の API Routes を経由する。
+ * リクエストボディ構築や型・例外など、Node.js 専用 API を使わない部分のみを置く。
+ * サーバー専用処理 (生成本体 fetch / vibe エンコード / キャッシュ) は `novelai-server.ts` 側に分離。
  */
 
-import { decodeMulti } from "@msgpack/msgpack";
 import type {
   ImageGenerateParams,
   NovelAIGenerateRequest,
   NovelAIModel,
 } from "@/types/novelai";
 
-const NOVELAI_API_BASE = "https://image.novelai.net";
+/**
+ * Vibe Transfer のリファレンス画像を `/ai/encode-vibe` で事前エンコードする必要があるモデル。
+ * V4 系 (Curated / Full) はこのステップを省略すると `reference_image_multiple` に raw base64 が
+ * 渡って生成本体が gen_id 付き "Internal Server Error" でストリームを落とす。
+ * V3 系は raw base64 をそのまま受け付ける。
+ */
+export const VIBE_ENCODE_REQUIRED_MODELS = new Set<NovelAIModel>([
+  "nai-diffusion-4-curated-preview",
+  "nai-diffusion-4-full",
+]);
 
 /** V4 品質タグ */
 const V4_QUALITY_TAGS = "no text, best quality, very aesthetic, absurdres";
@@ -160,11 +168,15 @@ export function buildRequestBody(
     parameters.reference_image_multiple = params.referenceImages.map(
       (ref) => ref.image
     );
-    parameters.reference_information_extracted_multiple =
-      params.referenceImages.map((ref) => ref.informationExtracted);
     parameters.reference_strength_multiple = params.referenceImages.map(
       (ref) => ref.referenceStrength
     );
+    // V4 Curated は事前エンコード時に information_extracted を消費済みなので
+    // 同フィールドを送ると 400 になる。それ以外のモデルでのみ付与する。
+    if (!VIBE_ENCODE_REQUIRED_MODELS.has(params.model)) {
+      parameters.reference_information_extracted_multiple =
+        params.referenceImages.map((ref) => ref.informationExtracted);
+    }
   }
 
   // img2img
@@ -180,100 +192,4 @@ export function buildRequestBody(
     action: params.action,
     parameters,
   };
-}
-
-/** msgpack ストリームレスポンスの型 */
-interface MsgpackStreamResponse {
-  event_type: string;
-  image?: Uint8Array; // バイナリ画像データ
-}
-
-/** Novel AI の画像生成APIを呼び出す（ストリームエンドポイント） */
-export async function generateImage(
-  params: ImageGenerateParams,
-  token: string
-): Promise<string[]> {
-  const body = buildRequestBody(params);
-
-  // デバッグ用: リクエストボディを出力
-  console.log("=== Novel AI リクエスト ===");
-  console.log(JSON.stringify(body, null, 2));
-  console.log("===========================");
-
-  const response = await fetch(`${NOVELAI_API_BASE}/ai/generate-image-stream`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "不明なエラー");
-    throw new NovelAIApiError(
-      `Novel AI API エラー (${response.status}): ${errorText}`,
-      response.status
-    );
-  }
-
-  // ストリームからすべてのチャンクを読み取る
-  const arrayBuffer = await response.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-
-  console.log("=== レスポンスデバッグ ===");
-  console.log("レスポンスサイズ:", uint8Array.length, "bytes");
-  console.log("========================");
-
-  // msgpack をデコードして画像を抽出
-  // フォーマット: [4バイト長さ][msgpackデータ] の繰り返し
-  const images: string[] = [];
-  let offset = 0;
-
-  try {
-    while (offset < uint8Array.length) {
-      // 4バイトの長さプレフィックスを読み取る (big-endian)
-      if (offset + 4 > uint8Array.length) break;
-
-      const length =
-        (uint8Array[offset] << 24) |
-        (uint8Array[offset + 1] << 16) |
-        (uint8Array[offset + 2] << 8) |
-        uint8Array[offset + 3];
-      offset += 4;
-
-      if (offset + length > uint8Array.length) {
-        console.warn("不完全なチャンク、スキップ");
-        break;
-      }
-
-      // msgpack データをデコード
-      const chunk = uint8Array.slice(offset, offset + length);
-      offset += length;
-
-      // decodeMulti の最初の結果を取得
-      for (const decoded of decodeMulti(chunk)) {
-        const message = decoded as MsgpackStreamResponse;
-        console.log("イベントタイプ:", message.event_type);
-
-        // 最終画像イベントを取得 (final または newImage)
-        if ((message.event_type === "final" || message.event_type === "newImage") && message.image) {
-          // バイナリを Base64 に変換
-          const base64 = Buffer.from(message.image).toString("base64");
-          images.push(base64);
-          console.log("画像を取得:", base64.substring(0, 50) + "...");
-        }
-        break; // 各チャンクは1つのメッセージのみ
-      }
-    }
-  } catch (e) {
-    console.error("msgpack デコードエラー:", e);
-    throw new NovelAIApiError("レスポンスのデコードに失敗しました", 500);
-  }
-
-  if (images.length === 0) {
-    throw new NovelAIApiError("画像データが見つかりませんでした", 500);
-  }
-
-  return images;
 }
